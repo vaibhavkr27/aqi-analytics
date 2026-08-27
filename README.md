@@ -225,7 +225,3 @@ The project uses live public data rather than relying on a static dataset.
 
 This project is built for educational and portfolio purposes.
 
-````
-
-**That's all you need to paste.** Don't add the ```markdown lines themselves outside the block—they are already included as part of the README formatting.
-````
