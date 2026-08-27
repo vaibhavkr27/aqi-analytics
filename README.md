@@ -1,6 +1,5 @@
 
 
-````markdown
 # CityAir 🌫️
 
 Real-time air quality analytics for Indian cities using public air-quality data.
@@ -20,23 +19,21 @@ CityAir lets users search for a city, find the nearest available OpenAQ monitori
 
 ## How It Works
 
-```text
-City Search
-    ↓
-Geocoding
-    ↓
-Latitude / Longitude
-    ↓
-Nearby OpenAQ Stations
-    ↓
-Nearest Available Station
-    ↓
-Air Quality Measurements
-    ↓
-SQLite Database
-    ↓
+City Search  
+↓  
+Geocoding  
+↓  
+Latitude / Longitude  
+↓  
+Nearby OpenAQ Stations  
+↓  
+Nearest Available Station  
+↓  
+Air Quality Measurements  
+↓  
+SQLite Database  
+↓  
 Streamlit Dashboard
-````
 
 ## Tech Stack
 
