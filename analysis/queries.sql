@@ -153,3 +153,109 @@ LEFT JOIN sensors s
 GROUP BY c.city_name
 
 ORDER BY sensors DESC;
+
+
+
+-- ============================================================
+-- QUERY: raw_30_day_readings
+-- ============================================================
+
+SELECT
+    r.measured_at,
+    r.parameter,
+    r.value,
+    r.unit
+FROM readings r
+JOIN cities c
+    ON c.city_id = r.city_id
+WHERE c.city_name = ?
+ORDER BY r.measured_at, r.parameter;
+
+
+-- ============================================================
+-- QUERY: pollutant_statistics
+-- ============================================================
+
+SELECT
+    r.parameter,
+    COUNT(*) AS observations,
+    ROUND(AVG(r.value), 2) AS average_value,
+    MIN(r.value) AS minimum_value,
+    MAX(r.value) AS maximum_value
+FROM readings r
+JOIN cities c
+    ON c.city_id = r.city_id
+WHERE c.city_name = ?
+GROUP BY r.parameter
+ORDER BY r.parameter;
+
+
+-- ============================================================
+-- QUERY: daily_trends
+-- ============================================================
+
+SELECT
+    DATE(r.measured_at) AS day,
+    r.parameter,
+    ROUND(AVG(r.value), 2) AS average_value,
+    ROUND(MIN(r.value), 2) AS minimum_value,
+    ROUND(MAX(r.value), 2) AS maximum_value,
+    COUNT(*) AS observations
+FROM readings r
+JOIN cities c
+    ON c.city_id = r.city_id
+WHERE c.city_name = ?
+GROUP BY
+    DATE(r.measured_at),
+    r.parameter
+ORDER BY
+    day,
+    r.parameter;
+
+
+-- ============================================================
+-- QUERY: hourly_patterns
+-- ============================================================
+
+SELECT
+    strftime(
+        '%H',
+        datetime(r.measured_at, '+5 hours', '+30 minutes')
+    ) AS hour_ist,
+    r.parameter,
+    ROUND(AVG(r.value), 2) AS average_value,
+    ROUND(MIN(r.value), 2) AS minimum_value,
+    ROUND(MAX(r.value), 2) AS maximum_value,
+    COUNT(*) AS observations
+FROM readings r
+JOIN cities c
+    ON c.city_id = r.city_id
+WHERE c.city_name = ?
+GROUP BY
+    hour_ist,
+    r.parameter
+ORDER BY
+    hour_ist,
+    r.parameter;
+
+
+-- ============================================================
+-- QUERY: data_coverage
+-- ============================================================
+
+SELECT
+    r.parameter,
+    COUNT(*) AS observations,
+    COUNT(DISTINCT DATE(r.measured_at)) AS days_available,
+    COUNT(DISTINCT strftime(
+        '%H',
+        datetime(r.measured_at, '+5 hours', '+30 minutes')
+    )) AS hours_available,
+    MIN(r.measured_at) AS first_reading,
+    MAX(r.measured_at) AS last_reading
+FROM readings r
+JOIN cities c
+    ON c.city_id = r.city_id
+WHERE c.city_name = ?
+GROUP BY r.parameter
+ORDER BY r.parameter;
