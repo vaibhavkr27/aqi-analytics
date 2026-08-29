@@ -20,18 +20,20 @@ Usage:
 The initial city list is stored in data/cities.py.
 """
 from __future__ import annotations
-from math import radians, sin, cos, sqrt, atan2
-from geocoder import geocode_city
-
 
 import os
 import sqlite3
 import sys
 import time
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
+from math import radians, sin, cos, sqrt, atan2
 from pathlib import Path
 
 import requests
+
+from geocoder import geocode_city
 
 # Allow importing data.cities when running:
 # python data/ingest.py
@@ -222,7 +224,7 @@ def choose_location(
     city_longitude: float,
     start: str,
     end: str,
-) -> dict | None:
+) -> tuple[dict, dict[int, list[dict]]] | None:
 
     if not locations:
         return None
@@ -262,22 +264,7 @@ def choose_location(
             if parameter_name not in PARAMETERS_OF_INTEREST:
                 continue
 
-            try:
-                measurements = get_hourly_measurements(
-                    sensor["id"],
-                    start,
-                    end,
-                )
-            except requests.RequestException:
-                continue
-
-            if measurements:
-                usable_sensors.append(
-                    {
-                        "sensor": sensor,
-                        "readings": len(measurements),
-                    }
-                )
+            usable_sensors.append(sensor)
 
         if not usable_sensors:
             continue
@@ -286,96 +273,74 @@ def choose_location(
             {
                 "location": location,
                 "distance": distance,
-                "usable_sensors": usable_sensors,
+                "sensors": usable_sensors,
             }
         )
 
     if not candidates:
         return None
 
-    # Among stations that actually have data,
-    # choose the nearest one.
+    # Nearest station first
     candidates.sort(
         key=lambda candidate: candidate["distance"]
     )
 
-    selected = candidates[0]
+    # ------------------------------------------------------------
+    # Check stations from nearest to farthest.
+    # Fetch sensor data concurrently.
+    # ------------------------------------------------------------
 
-    location = selected["location"]
+    for candidate in candidates:
 
-    print(
-        f"   Selected station: "
-        f"{location.get('name')} "
-        f"({selected['distance']:.2f} km away)"
-    )
+        location = candidate["location"]
+        sensors = candidate["sensors"]
 
-    print(
-        f"   Usable sensors: "
-        f"{len(selected['usable_sensors'])}"
-    )
+        cached_measurements = {}
 
-    return location
+        with ThreadPoolExecutor(max_workers=5) as executor:
 
-    if not locations:
-        return None
-
-    candidates = []
-
-    for location in locations:
-
-        coordinates = location.get("coordinates") or {}
-
-        latitude = coordinates.get("latitude")
-        longitude = coordinates.get("longitude")
-
-        if latitude is None or longitude is None:
-            continue
-
-        sensors = location.get("sensors") or []
-
-        useful_parameters = set()
-
-        for sensor in sensors:
-
-            parameter = sensor.get("parameter") or {}
-
-            if isinstance(parameter, dict):
-
-                name = parameter.get("name")
-
-                if name in PARAMETERS_OF_INTEREST:
-                    useful_parameters.add(name)
-
-        distance = calculate_distance_km(
-            city_latitude,
-            city_longitude,
-            latitude,
-            longitude,
-        )
-
-        candidates.append(
-            {
-                "location": location,
-                "distance": distance,
-                "parameters": len(useful_parameters),
-                "is_monitor": bool(location.get("isMonitor")),
-                "is_mobile": bool(location.get("isMobile")),
+            future_to_sensor = {
+                executor.submit(
+                    get_hourly_measurements,
+                    sensor["id"],
+                    start,
+                    end,
+                ): sensor
+                for sensor in sensors
             }
-        )
 
-    if not candidates:
-        return None
+            for future in as_completed(future_to_sensor):
 
-    # Prefer stations with useful sensors.
-    # Among those, choose the nearest station.
-    candidates.sort(
-        key=lambda item: (
-            item["parameters"] == 0,
-            item["distance"],
-        )
-    )
+                sensor = future_to_sensor[future]
 
-    return candidates[0]["location"]
+                try:
+                    measurements = future.result()
+
+                except requests.RequestException:
+                    continue
+
+                if measurements:
+                    cached_measurements[
+                        sensor["id"]
+                    ] = measurements
+
+        # This station has usable data
+        if cached_measurements:
+
+            print(
+                f"   Selected station: "
+                f"{location.get('name')} "
+                f"({candidate['distance']:.2f} km away)"
+            )
+
+            print(
+                f"   Usable sensors: "
+                f"{len(cached_measurements)}"
+            )
+
+            return location, cached_measurements, sensors
+
+    return None
 
 def save_location(
     conn: sqlite3.Connection,
@@ -611,6 +576,8 @@ def get_hourly_measurements(
     return data.get("results", [])
 
 
+
+
 def insert_measurements(
     conn: sqlite3.Connection,
     city_id: int,
@@ -707,18 +674,21 @@ def ingest_city(
         city["longitude"],
     )
 
-    try:
+    station_start = time.perf_counter()
 
+    try:
         locations = find_locations(
             city["latitude"],
             city["longitude"],
         )
-
     except requests.RequestException as exc:
-
         result["status"] = f"location_error: {exc}"
-
         return result
+
+    print(
+        f"   Station search: "
+        f"{time.perf_counter() - station_start:.2f}s"
+    )
 
     if not locations:
 
@@ -728,17 +698,18 @@ def ingest_city(
 
     # We intentionally choose the best available station rather
     # than averaging arbitrary stations together.
-    location = choose_location(
-        locations,
-        city["latitude"],
-        city["longitude"],
-        start,
-        end,
-    )
+    selected = choose_location(
+    locations,
+    city["latitude"],
+    city["longitude"],
+    start,
+    end,
+)
 
-    if not location:
+    if not selected:
         result["status"] = "no_monitoring_station_with_data"
         return result
+    location, cached_measurements, sensors = selected
 
     location_id = save_location(
         conn,
@@ -748,18 +719,13 @@ def ingest_city(
 
     result["locations"] = 1
 
-    try:
 
-        sensors = get_sensors(
-            location["id"]
-        )
 
-    except requests.RequestException as exc:
+    # ------------------------------------------------------------
+    # Prepare valid sensors
+    # ------------------------------------------------------------
 
-        result["status"] = f"sensor_error: {exc}"
-
-        return result
-
+    
     for sensor in sensors:
 
         parameter = (
@@ -780,16 +746,12 @@ def ingest_city(
 
         result["sensors"] += 1
 
-        try:
+        measurements = cached_measurements.get(
+            sensor["id"],
+            [],
+        )
 
-            measurements = get_hourly_measurements(
-                sensor["id"],
-                start,
-                end,
-            )
-
-        except requests.RequestException:
-
+        if not measurements:
             continue
 
         result["readings"] += insert_measurements(
@@ -802,10 +764,7 @@ def ingest_city(
             ).get("units"),
             measurements,
         )
-
     return result
-
-
 # ============================================================
 # Main
 # ============================================================
