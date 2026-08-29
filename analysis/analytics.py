@@ -7,28 +7,17 @@ a complete 30-day analytical report for a city.
 
 from __future__ import annotations
 
-import sqlite3
-from pathlib import Path
-from typing import Any
 
+from typing import Any
+from pathlib import Path
 import pandas as pd
 
 
-# ============================================================
-# Paths
-# ============================================================
-
-BASE_DIR = Path(__file__).resolve().parent
-PROJECT_DIR = BASE_DIR.parent
-
-DB_PATH = PROJECT_DIR / "db" / "aqi.db"
 
 
-# ============================================================
-# Import processor
-# ============================================================
 
-from processor import process_city_data
+
+
 
 
 # ============================================================
@@ -51,36 +40,6 @@ def parameter_label(parameter: str) -> str:
         parameter,
         parameter.upper(),
     )
-
-
-# ============================================================
-# Load processed data
-# ============================================================
-
-def load_processed_data(
-    conn: sqlite3.Connection,
-    city_name: str,
-) -> pd.DataFrame:
-    """
-    Load raw city readings through processor.py.
-
-    processor.py handles:
-    - cleaning
-    - timezone conversion
-    - unit normalization
-    - anomaly detection
-    - date/time features
-    """
-
-    df = process_city_data(
-        conn,
-        city_name,
-    )
-
-    if df is None:
-        return pd.DataFrame()
-
-    return df.copy()
 
 
 # ============================================================
@@ -811,22 +770,14 @@ def get_data_coverage(
 # ============================================================
 
 def get_city_analytics(
-    conn: sqlite3.Connection,
+    df: pd.DataFrame,
     city_name: str,
 ) -> dict[str, Any]:
-    """
-    Generate the complete analytical report for a city.
-    """
-
-    df = load_processed_data(
-        conn,
-        city_name,
-    )
+    
 
     if df.empty:
         return {
             "city": city_name,
-            "raw_readings": [],
             "pollutant_statistics": [],
             "daily_trends": [],
             "hourly_patterns": [],
@@ -843,11 +794,7 @@ def get_city_analytics(
     return {
         "city": city_name,
 
-        "raw_readings": (
-            df.to_dict(
-                orient="records"
-            )
-        ),
+
 
         "pollutant_statistics":
             get_pollutant_statistics(
@@ -914,99 +861,116 @@ def get_city_analytics(
 
 if __name__ == "__main__":
 
+    import sqlite3
+
     city = "Mumbai"
 
-    conn = sqlite3.connect(
-        DB_PATH
+    DB_PATH = (
+        Path(__file__).resolve().parent.parent
+        / "db"
+        / "aqi.db"
     )
+
+    conn = sqlite3.connect(DB_PATH)
 
     try:
 
-        print(
-            "\n"
-            + "=" * 60
-        )
+        raw_readings = conn.execute("""
+            SELECT
+                r.measured_at,
+                r.parameter,
+                r.value,
+                r.unit
+            FROM readings r
+            JOIN cities c
+                ON c.city_id = r.city_id
+            WHERE c.city_name = ?
+            ORDER BY r.measured_at
+        """, (city,)).fetchall()
 
-        print(
-            "CityAir — Pandas Analytics"
-        )
+    finally:
+        conn.close()
 
-        print(
-            "=" * 60
-        )
+    raw_df = pd.DataFrame(
+        raw_readings,
+        columns=[
+            "measured_at",
+            "parameter",
+            "value",
+            "unit",
+        ],
+    )
 
-        print(
-            f"City: {city}"
-        )
+    from processor import process_city_data
 
-        print(
-            "=" * 60
-        )
+    processed_df = process_city_data(
+        raw_df
+    )
 
-        report = get_city_analytics(
-            conn,
-            city,
-        )
+    report = get_city_analytics(
+        processed_df,
+        city,
+    )
 
-        # ----------------------------------------------------
-        # Pollutant statistics
-        # ----------------------------------------------------
+    # ----------------------------------------------------
+    # Pollutant statistics
+    # ----------------------------------------------------
 
-        print(
-            "\n30-DAY POLLUTANT STATISTICS"
-        )
+    print(
+        "\n30-DAY POLLUTANT STATISTICS"
+    )
 
-        print(
-            "-" * 60
-        )
+    print(
+        "-" * 60
+    )
 
-        for item in report[
-            "pollutant_statistics"
-        ]:
-            print(item)
+    for item in report[
+        "pollutant_statistics"
+    ]:
+        print(item)
 
-        # ----------------------------------------------------
-        # Daily trends
-        # ----------------------------------------------------
+    # ----------------------------------------------------
+    # Daily trends
+    # ----------------------------------------------------
 
-        print(
-            "\nDAILY TRENDS"
-        )
+    print(
+        "\nDAILY TRENDS"
+    )
 
-        print(
-            "-" * 60
-        )
+    print(
+        "-" * 60
+    )
 
-        daily = report[
-            "daily_trends"
-        ]
+    daily = report[
+        "daily_trends"
+    ]
 
-        for item in daily[:15]:
-            print(item)
+    for item in daily[:15]:
+        print(item)
 
-        print(
-            f"\nTotal daily records: "
-            f"{len(daily)}"
-        )
+    print(
+        f"\nTotal daily records: "
+        f"{len(daily)}"
+    )
 
-        # ----------------------------------------------------
-        # Hourly patterns
-        # ----------------------------------------------------
+    # ----------------------------------------------------
+    # Hourly patterns
+    # ----------------------------------------------------
 
-        print(
-            "\nHOURLY PATTERNS — IST"
-        )
+    print(
+        "\nHOURLY PATTERNS — IST"
+    )
 
-        print(
-            "-" * 60
-        )
+    print(
+        "-" * 60
+    )
 
-        hourly = report[
-            "hourly_patterns"
-        ]
+    hourly = report[
+        "hourly_patterns"
+    ]
 
-        for item in hourly[:15]:
-            print(item)
+    for item in hourly[:15]:
+        print(item)
 
         print(
             f"\nTotal hourly groups: "
@@ -1176,12 +1140,8 @@ if __name__ == "__main__":
         )
 
         print(
-            "Raw readings:",
-            len(
-                report[
-                    "raw_readings"
-                ]
-            ),
+            "Processed rows:",
+            len(processed_df),
         )
 
         print(
@@ -1220,6 +1180,6 @@ if __name__ == "__main__":
             ),
         )
 
-    finally:
 
-        conn.close()
+
+     
