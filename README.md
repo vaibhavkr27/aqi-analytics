@@ -17,15 +17,7 @@
 
 <br>
 
-<p align="center">
-  <img src="docs/screenshots/landing.png" width="90%" alt="AeroIQ landing page" />
-</p>
 
-<p align="center">
-  <img src="docs/screenshots/report.png" width="90%" alt="AeroIQ AQI report for Delhi" />
-</p>
-
-<br>
 
 ## 📌 The Question This Project Answers
 
@@ -55,13 +47,7 @@ This is where most of the actual effort went:
 - **Insight generation** — analytical output translated into plain-language findings, e.g. *"PM2.5 spiked 1612% above its local baseline at 5 PM"* — the kind of storytelling that turns numbers into a decision-ready narrative
 - **SQL-backed data layer** — SQLite used as a queryable local warehouse (cities, stations, sensors, readings), with case-insensitive lookups and de-duplicated inserts
 
-## 📊 Findings From Real Data
 
-| City | Observations Analyzed | AQI | Category | Dominant Pollutant |
-|---|---|---|---|---|
-| Delhi | 3,550 | 132 | Moderate | PM2.5 |
-| Mumbai | 2,224 | 122 | Moderate | NO₂ |
-| Jaipur | 3,547 | Resolved live, zero prior data | — | — |
 
 ## 🛠️ Tools & Techniques
 
