@@ -9,8 +9,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import pandas as pd
-
 
 # ============================================================
 # Helpers
@@ -22,10 +20,13 @@ PARAMETER_LABELS = {
     "no2": "NO₂",
     "so2": "SO₂",
     "co": "CO",
+    "o3": "O₃",
 }
 
 
-def parameter_label(parameter: str) -> str:
+def parameter_label(
+    parameter: str,
+) -> str:
     """Return a user-friendly pollutant name."""
 
     return PARAMETER_LABELS.get(
@@ -34,13 +35,18 @@ def parameter_label(parameter: str) -> str:
     )
 
 
-def format_value(value: Any) -> str:
+def format_value(
+    value: Any,
+) -> str:
     """Format numerical values for human-readable output."""
 
-    if pd.isna(value):
+    if value is None:
         return "N/A"
 
-    value = float(value)
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return "N/A"
 
     if value >= 100:
         return f"{value:.0f}"
@@ -51,188 +57,214 @@ def format_value(value: Any) -> str:
     return f"{value:.2f}"
 
 
-def format_datetime(timestamp: Any) -> str:
-    """Format timestamp in a readable IST format."""
+def format_datetime(
+    timestamp: Any,
+) -> str:
+    """Format timestamp in a readable format."""
 
-    if pd.isna(timestamp):
+    if timestamp is None:
         return "Unknown time"
 
-    timestamp = pd.Timestamp(timestamp)
+    try:
+        timestamp = str(timestamp)
 
-    return (
-        timestamp.strftime("%B")
-        + f" {timestamp.day}, "
-        + timestamp.strftime(
-            "%Y at %H:%M IST"
+        # Expected:
+        # 2026-08-05 17:00:00+05:30
+
+        date_part, time_part = timestamp.split(
+            " ",
+            1,
         )
-    )
+
+        year, month, day = date_part.split(
+            "-"
+        )
+
+        hour = time_part[:5]
+
+        months = {
+            "01": "January",
+            "02": "February",
+            "03": "March",
+            "04": "April",
+            "05": "May",
+            "06": "June",
+            "07": "July",
+            "08": "August",
+            "09": "September",
+            "10": "October",
+            "11": "November",
+            "12": "December",
+        }
+
+        month_name = months.get(
+            month,
+            month,
+        )
+
+        return (
+            f"{month_name} {int(day)}, "
+            f"{year} at {hour} IST"
+        )
+
+    except (ValueError, AttributeError):
+        return str(timestamp)
 
 
 # ============================================================
 # Pollution Spike Insights
 # ============================================================
 
+
 def generate_anomaly_insights(
-    df: pd.DataFrame,
-    max_insights: int = 10,
+    report: dict[str, Any],
+    max_insights: int = 5,
 ) -> list[str]:
     """
-    Generate human-readable insights for statistically
-    significant anomalies.
-
-    An anomaly is NOT removed from the dataset.
-    It is interpreted as an unusual observation.
+    Convert statistical anomalies into meaningful
+    pollution spike insights.
     """
 
-    if df.empty:
+    anomalies = report.get(
+        "anomalies",
+        [],
+    )
+
+    if not anomalies:
         return []
 
-    if "is_statistical_anomaly" not in df.columns:
+    valid_anomalies = []
+
+    for anomaly in anomalies:
+
+        value = anomaly.get("value")
+        baseline = anomaly.get("local_median")
+        deviation = anomaly.get("deviation_percent")
+
+        if value is None:
+            continue
+
+        if baseline is None:
+            continue
+
+        if deviation is None:
+            continue
+
+        try:
+            value = float(value)
+            baseline = float(baseline)
+            deviation = float(deviation)
+        except (TypeError, ValueError):
+            continue
+
+        # Ignore unreliable zero-baseline anomalies,
+        # such as the CO records in the current dataset.
+        if baseline <= 0:
+            continue
+
+        # Only positive deviations represent pollution spikes.
+        if deviation <= 0:
+            continue
+
+        valid_anomalies.append(anomaly)
+
+    if not valid_anomalies:
         return []
 
-    anomalies = df[
-        df["is_statistical_anomaly"]
-    ].copy()
-
-    if anomalies.empty:
-        return []
-
-    # Rank strongest anomalies first.
-    if "robust_z_score" in anomalies.columns:
-
-        anomalies["_severity"] = (
-            anomalies["robust_z_score"]
-            .abs()
-        )
-
-        anomalies = anomalies.sort_values(
-            "_severity",
-            ascending=False,
-        )
+    valid_anomalies.sort(
+        key=lambda anomaly: float(
+            anomaly.get(
+                "deviation_percent",
+                0,
+            )
+        ),
+        reverse=True,
+    )
 
     insights = []
 
-    for _, row in anomalies.head(
-        max_insights
-    ).iterrows():
+    for anomaly in valid_anomalies[:max_insights]:
 
-        parameter = parameter_label(
-            row["parameter"]
+        pollutant = parameter_label(
+            anomaly.get(
+                "parameter",
+                "pollutant",
+            )
         )
 
-        value = format_value(
-            row["value_standardized"]
-        )
-
-        unit = row[
-            "standardized_unit"
-        ]
-
+        value = anomaly.get("value")
+        unit = anomaly.get("unit", "")
         timestamp = format_datetime(
-            row["measured_at_ist"]
+            anomaly.get("timestamp")
         )
+        baseline = anomaly.get("local_median")
+        deviation = anomaly.get("deviation_percent")
 
-        deviation = row.get(
-            "deviation_percent"
+        insights.append(
+            f"{pollutant} experienced a "
+            f"significant pollution spike at "
+            f"{timestamp}, reaching "
+            f"{format_value(value)} {unit}. "
+            f"This was approximately "
+            f"{format_value(deviation)}% above "
+            f"its local baseline of "
+            f"{format_value(baseline)} {unit}."
         )
-
-        robust_z = row.get(
-            "robust_z_score"
-        )
-
-        # ----------------------------------------------------
-        # Build explanation
-        # ----------------------------------------------------
-
-        message = (
-            f"{parameter} pollution spike detected: "
-            f"on {timestamp}, the concentration "
-            f"reached {value} {unit}"
-        )
-
-        if not pd.isna(deviation):
-
-            message += (
-                f", approximately "
-                f"{float(deviation):.0f}% "
-                f"away from its recent local baseline"
-            )
-
-        if not pd.isna(robust_z):
-
-            message += (
-                f" (robust Z-score: "
-                f"{float(robust_z):.2f})"
-            )
-
-        message += "."
-
-        insights.append(message)
 
     return insights
 
-
-# ============================================================
-# Peak Pollution Insights
-# ============================================================
-
 def generate_peak_insights(
-    df: pd.DataFrame,
+    report: dict[str, Any],
 ) -> list[str]:
     """
-    Identify the highest recorded concentration
-    for each pollutant.
+    Convert pollution peak records into
+    human-readable insights.
     """
 
-    if df.empty:
+    peaks = report.get(
+        "pollution_peaks",
+        [],
+    )
+
+    if not peaks:
         return []
 
     insights = []
 
-    for parameter in (
-        df["parameter"]
-        .dropna()
-        .unique()
-    ):
+    for peak in peaks:
 
-        parameter_df = df[
-            df["parameter"] == parameter
-        ].copy()
-
-        if parameter_df.empty:
-            continue
-
-        peak_index = (
-            parameter_df[
-                "value_standardized"
-            ]
-            .idxmax()
+        parameter = peak.get(
+            "parameter"
         )
 
-        peak = parameter_df.loc[
-            peak_index
-        ]
+        value = peak.get(
+            "value"
+        )
+
+        unit = peak.get(
+            "unit",
+            "",
+        )
+
+        timestamp = peak.get(
+            "timestamp"
+        )
+
+        if parameter is None:
+            continue
+
+        if value is None:
+            continue
 
         pollutant = parameter_label(
             parameter
         )
 
-        value = format_value(
-            peak["value_standardized"]
-        )
-
-        unit = peak[
-            "standardized_unit"
-        ]
-
-        timestamp = format_datetime(
-            peak["measured_at_ist"]
-        )
-
         insights.append(
             f"Highest {pollutant} concentration "
-            f"was {value} {unit}, recorded on "
-            f"{timestamp}."
+            f"was {format_value(value)} {unit}, "
+            f"recorded on "
+            f"{format_datetime(timestamp)}."
         )
 
     return insights
@@ -243,143 +275,138 @@ def generate_peak_insights(
 # ============================================================
 
 def generate_hourly_insights(
-    df: pd.DataFrame,
+    report: dict[str, Any],
 ) -> list[str]:
     """
-    Identify the hour with the highest and lowest
-    average concentration for PM2.5 and PM10.
+    Convert hourly pollution extremes into
+    human-readable insights.
     """
 
-    if df.empty:
+    hourly = report.get(
+        "hourly_extremes"
+    )
+
+    if not hourly:
         return []
+
+    if not isinstance(
+        hourly,
+        dict,
+    ):
+        return []
+
+    parameter = hourly.get(
+        "parameter",
+        "pm25",
+    )
+
+    pollutant = parameter_label(
+        parameter
+    )
+
+    highest_hour = hourly.get(
+        "highest_hour_ist"
+    )
+
+    highest_average = hourly.get(
+        "highest_average"
+    )
+
+    lowest_hour = hourly.get(
+        "lowest_hour_ist"
+    )
+
+    lowest_average = hourly.get(
+        "lowest_average"
+    )
 
     insights = []
 
-    for parameter in [
-        "pm25",
-        "pm10",
-    ]:
-
-        parameter_df = df[
-            df["parameter"] == parameter
-        ].copy()
-
-        if parameter_df.empty:
-            continue
-
-        hourly = (
-            parameter_df
-            .groupby("hour")[
-                "value_standardized"
-            ]
-            .mean()
-            .dropna()
-        )
-
-        if hourly.empty:
-            continue
-
-        highest_hour = hourly.idxmax()
-        lowest_hour = hourly.idxmin()
-
-        highest_value = hourly.max()
-        lowest_value = hourly.min()
-
-        pollutant = parameter_label(
-            parameter
-        )
-
-        unit = parameter_df[
-            "standardized_unit"
-        ].iloc[0]
+    if highest_hour is not None:
 
         insights.append(
             f"{pollutant} had its highest "
             f"average concentration around "
-            f"{int(highest_hour):02d}:00 IST "
-            f"({format_value(highest_value)} "
-            f"{unit})."
+            f"{highest_hour} IST, at "
+            f"{format_value(highest_average)} "
+            f"µg/m³."
         )
+
+    if lowest_hour is not None:
 
         insights.append(
             f"{pollutant} had its lowest "
             f"average concentration around "
-            f"{int(lowest_hour):02d}:00 IST "
-            f"({format_value(lowest_value)} "
-            f"{unit})."
+            f"{lowest_hour} IST, at "
+            f"{format_value(lowest_average)} "
+            f"µg/m³."
         )
 
     return insights
 
-
 # ============================================================
-# Daily Trend Insights
+# Daily Pattern Insights
 # ============================================================
 
 def generate_daily_insights(
-    df: pd.DataFrame,
+    report: dict[str, Any],
 ) -> list[str]:
     """
-    Identify highest and lowest average pollution days.
+    Convert PM2.5 daily extremes into insights.
     """
 
-    if df.empty:
+    daily = report.get(
+        "daily_extremes",
+    )
+
+    if not daily:
         return []
+
+    parameter = daily.get(
+        "parameter",
+        "pm25",
+    )
+
+    pollutant = parameter_label(
+        parameter
+    )
+
+    highest_day = daily.get(
+        "highest_day"
+    )
+
+    highest_average = daily.get(
+        "highest_average"
+    )
+
+    lowest_day = daily.get(
+        "lowest_day"
+    )
+
+    lowest_average = daily.get(
+        "lowest_average"
+    )
 
     insights = []
 
-    for parameter in [
-        "pm25",
-        "pm10",
-    ]:
-
-        parameter_df = df[
-            df["parameter"] == parameter
-        ].copy()
-
-        if parameter_df.empty:
-            continue
-
-        daily = (
-            parameter_df
-            .groupby("date")[
-                "value_standardized"
-            ]
-            .mean()
-            .dropna()
-        )
-
-        if daily.empty:
-            continue
-
-        highest_day = daily.idxmax()
-        lowest_day = daily.idxmin()
-
-        highest_value = daily.max()
-        lowest_value = daily.min()
-
-        pollutant = parameter_label(
-            parameter
-        )
-
-        unit = parameter_df[
-            "standardized_unit"
-        ].iloc[0]
+    if highest_day:
 
         insights.append(
             f"{pollutant} had its highest "
             f"daily average on "
-            f"{highest_day.strftime('%B %-d, %Y')}, "
-            f"at {format_value(highest_value)} "
-            f"{unit}."
+            f"{highest_day}, at "
+            f"{format_value(highest_average)} "
+            f"µg/m³."
         )
+
+    if lowest_day:
 
         insights.append(
             f"{pollutant} had its lowest "
             f"daily average on "
-            f"{lowest_day.strftime('%B %-d, %Y')}, "
-            f"at {format_value(lowest_value)} "
-            f"{unit}."
+            f"{lowest_day}, at "
+            f"{format_value(lowest_average)} "
+            f"µg/m³."
         )
 
     return insights
@@ -390,27 +417,36 @@ def generate_daily_insights(
 # ============================================================
 
 def generate_insights(
-    df: pd.DataFrame,
+    report: dict[str, Any],
 ) -> dict[str, list[str]]:
     """
-    Generate all user-facing insights.
+    Generate all user-facing insights from
+    the analytics report.
     """
+
+    if not report:
+        return {
+            "pollution_spikes": [],
+            "peak_concentrations": [],
+            "hourly_patterns": [],
+            "daily_patterns": [],
+        }
 
     return {
         "pollution_spikes": generate_anomaly_insights(
-            df
+            report
         ),
 
         "peak_concentrations": generate_peak_insights(
-            df
+            report
         ),
 
         "hourly_patterns": generate_hourly_insights(
-            df
+            report
         ),
 
         "daily_patterns": generate_daily_insights(
-            df
+            report
         ),
     }
 
@@ -421,11 +457,11 @@ def generate_insights(
 
 if __name__ == "__main__":
 
-    print(
-        "CityAir — Insight Generator"
-    )
+    print("=" * 60)
+    print("CityAir — Insight Generator")
+    print("=" * 60)
 
     print(
-        "This module is designed to be "
-        "called from analytics.py."
+        "\nThis module is designed to be "
+        "called from report.py."
     )

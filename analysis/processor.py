@@ -725,9 +725,7 @@ if __name__ == "__main__":
         / "aqi.db"
     )
 
-    conn = sqlite3.connect(
-        DB_PATH
-    )
+    conn = sqlite3.connect(DB_PATH)
 
     city = "Mumbai"
 
@@ -735,23 +733,38 @@ if __name__ == "__main__":
     print("CityAir — Pandas Data Processing")
     print("=" * 60)
 
-    # --------------------------------------------------------
-    # Process data
-    # --------------------------------------------------------
+    # Load raw data for testing
+    raw_readings = conn.execute("""
+        SELECT
+            r.measured_at,
+            r.parameter,
+            r.value,
+            r.unit
+        FROM readings r
+        JOIN cities c
+            ON c.city_id = r.city_id
+        WHERE c.city_name = ?
+        ORDER BY r.measured_at
+    """, (city,)).fetchall()
 
-    df = process_city_data(
-        conn,
-        city,
+    raw_df = pd.DataFrame(
+        raw_readings,
+        columns=[
+            "measured_at",
+            "parameter",
+            "value",
+            "unit",
+        ],
     )
+
+    # Process with Pandas
+    df = process_city_data(raw_df)
 
     print(
         f"\nProcessed rows: {len(df)}"
     )
 
-    # --------------------------------------------------------
     # Show sample
-    # --------------------------------------------------------
-
     print("\nProcessed Sample:")
 
     columns = [
@@ -774,103 +787,72 @@ if __name__ == "__main__":
         .to_string(index=False)
     )
 
-    # --------------------------------------------------------
     # Data quality
-    # --------------------------------------------------------
-
     print("\nData Quality:")
 
-    quality = get_data_quality(
-        df
-    )
+    quality = get_data_quality(df)
 
     for key, value in quality.items():
-        print(
-            f"{key}: {value}"
-        )
+        print(f"{key}: {value}")
 
-    # --------------------------------------------------------
     # Missing-data analysis
-    # --------------------------------------------------------
-
     print("\nMissing Data Analysis:")
     print("-" * 60)
 
-    missing = get_missing_data_analysis(
-        df
-    )
+    missing = get_missing_data_analysis(df)
 
     if not missing.empty:
         print(
-            missing.to_string(
-                index=False
-            )
+            missing.to_string(index=False)
         )
 
-    # --------------------------------------------------------
-# Statistical anomaly summary
-# --------------------------------------------------------
+    # Statistical anomaly summary
+    print("\nStatistical Anomaly Analysis:")
+    print("-" * 60)
 
-print("\nStatistical Anomaly Analysis:")
-print("-" * 60)
-
-anomaly_summary = (
-    df.groupby("parameter")
-    .agg(
-        observations=(
-            "value_standardized",
-            "count",
-        ),
-        statistical_anomalies=(
-            "is_statistical_anomaly",
-            "sum",
-        ),
+    anomaly_summary = (
+        df.groupby("parameter")
+        .agg(
+            observations=("value_standardized", "count"),
+            statistical_anomalies=(
+                "is_statistical_anomaly",
+                "sum",
+            ),
+        )
+        .reset_index()
     )
-    .reset_index()
-)
-
-print(
-    anomaly_summary.to_string(
-        index=False
-    )
-)
-
-
-# --------------------------------------------------------
-# Show sample anomalies
-# --------------------------------------------------------
-
-print("\nSample Statistical Anomalies:")
-print("-" * 60)
-
-anomalies = df[
-    df["is_statistical_anomaly"]
-]
-
-if anomalies.empty:
 
     print(
-        "No statistical anomalies detected."
+        anomaly_summary.to_string(index=False)
     )
 
-else:
+    # Sample anomalies
+    print("\nSample Statistical Anomalies:")
+    print("-" * 60)
 
-    print(
-        anomalies[
-            [
-                "measured_at_ist",
-                "parameter",
-                "value",
-                "unit",
-                "value_standardized",
-                "standardized_unit",
-                "robust_z_score",
+    anomalies = df[
+        df["is_statistical_anomaly"]
+    ]
+
+    if anomalies.empty:
+        print(
+            "No statistical anomalies detected."
+        )
+    else:
+        print(
+            anomalies[
+                [
+                    "measured_at_ist",
+                    "parameter",
+                    "value",
+                    "unit",
+                    "value_standardized",
+                    "standardized_unit",
+                    "robust_z_score",
+                ]
             ]
-        ]
-        .head(20)
-        .to_string(
-            index=False
+            .head(20)
+            .to_string(index=False)
         )
-    )
 
-conn.close()
+    conn.close()

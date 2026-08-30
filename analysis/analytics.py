@@ -30,6 +30,7 @@ PARAMETER_LABELS = {
     "no2": "NO₂",
     "so2": "SO₂",
     "co": "CO",
+    "o3": "O₃",
 }
 
 
@@ -40,6 +41,470 @@ def parameter_label(parameter: str) -> str:
         parameter,
         parameter.upper(),
     )
+
+# ============================================================
+# Indian AQI / CPCB configuration
+# ============================================================
+
+AQI_BREAKPOINTS = {
+    "pm25": [
+        (0.0, 30.0, 0, 50),
+        (30.0, 60.0, 51, 100),
+        (60.0, 90.0, 101, 200),
+        (90.0, 120.0, 201, 300),
+        (120.0, 250.0, 301, 400),
+        (250.0, float("inf"), 401, 500),
+    ],
+    "pm10": [
+        (0.0, 50.0, 0, 50),
+        (50.0, 100.0, 51, 100),
+        (100.0, 250.0, 101, 200),
+        (250.0, 350.0, 201, 300),
+        (350.0, 430.0, 301, 400),
+        (430.0, float("inf"), 401, 500),
+    ],
+    "no2": [
+        (0.0, 40.0, 0, 50),
+        (40.0, 80.0, 51, 100),
+        (80.0, 180.0, 101, 200),
+        (180.0, 280.0, 201, 300),
+        (280.0, 400.0, 301, 400),
+        (400.0, float("inf"), 401, 500),
+    ],
+    "o3": [
+        (0.0, 50.0, 0, 50),
+        (50.0, 100.0, 51, 100),
+        (100.0, 168.0, 101, 200),
+        (168.0, 208.0, 201, 300),
+        (208.0, 748.0, 301, 400),
+        (748.0, float("inf"), 401, 500),
+    ],
+    "so2": [
+        (0.0, 40.0, 0, 50),
+        (40.0, 80.0, 51, 100),
+        (80.0, 380.0, 101, 200),
+        (380.0, 800.0, 201, 300),
+        (800.0, 1600.0, 301, 400),
+        (1600.0, float("inf"), 401, 500),
+    ],
+    "co": [
+        (0.0, 1.0, 0, 50),
+        (1.0, 2.0, 51, 100),
+        (2.0, 10.0, 101, 200),
+        (10.0, 17.0, 201, 300),
+        (17.0, 34.0, 301, 400),
+        (34.0, float("inf"), 401, 500),
+    ],
+}
+
+
+AQI_AVERAGING_HOURS = {
+    "pm25": 24,
+    "pm10": 24,
+    "no2": 24,
+    "so2": 24,
+    "o3": 8,
+    "co": 8,
+}
+
+
+AQI_UNITS = {
+    "pm25": "µg/m³",
+    "pm10": "µg/m³",
+    "no2": "µg/m³",
+    "so2": "µg/m³",
+    "o3": "µg/m³",
+    "co": "mg/m³",
+}
+
+
+AQI_CATEGORIES = [
+    (0, 50, "Good"),
+    (51, 100, "Satisfactory"),
+    (101, 200, "Moderate"),
+    (201, 300, "Poor"),
+    (301, 400, "Very Poor"),
+    (401, 500, "Severe"),
+]
+
+
+
+def get_aqi_category(
+    aqi: float,
+) -> str:
+    """Return the Indian/CPCB AQI category."""
+
+    for lower, upper, category in AQI_CATEGORIES:
+        if lower <= aqi <= upper:
+            return category
+
+    if aqi > 500:
+        return "Severe"
+
+    return "Good"
+
+
+
+
+def calculate_aqi_subindex(
+    parameter: str,
+    concentration: float,
+) -> float | None:
+    """
+    Calculate a pollutant AQI sub-index using
+    CPCB breakpoint interpolation.
+    """
+
+    if parameter not in AQI_BREAKPOINTS:
+        return None
+
+    if concentration is None:
+        return None
+
+    concentration = float(
+        concentration
+    )
+
+    if concentration < 0:
+        return None
+
+    for (
+        concentration_low,
+        concentration_high,
+        aqi_low,
+        aqi_high,
+    ) in AQI_BREAKPOINTS[parameter]:
+
+        if (
+            concentration >= concentration_low
+            and concentration <= concentration_high
+        ):
+
+            if concentration_high == float("inf"):
+                return 500.0
+
+            subindex = (
+                (
+                    (aqi_high - aqi_low)
+                    /
+                    (
+                        concentration_high
+                        - concentration_low
+                    )
+                )
+                *
+                (
+                    concentration
+                    - concentration_low
+                )
+                + aqi_low
+            )
+
+            return round(
+                min(500.0, max(0.0, subindex)),
+                1,
+            )
+
+    return None
+
+
+def get_latest_aqi_average(
+    df: pd.DataFrame,
+    parameter: str,
+) -> dict[str, Any] | None:
+    """
+    Calculate the latest rolling average required
+    for the pollutant AQI sub-index.
+    """
+
+    if parameter not in AQI_AVERAGING_HOURS:
+        return None
+
+    parameter_df = df[
+        df["parameter"] == parameter
+    ].copy()
+
+    if parameter_df.empty:
+        return None
+
+    parameter_df = parameter_df[
+        [
+            "measured_at_ist",
+            "value_standardized",
+        ]
+    ].dropna(
+        subset=[
+            "measured_at_ist",
+            "value_standardized",
+        ]
+    )
+
+    if parameter_df.empty:
+        return None
+
+    # Multiple readings within the same hour
+    # are reduced to one hourly mean.
+    hourly = (
+        parameter_df
+        .set_index("measured_at_ist")
+        .resample("1h")["value_standardized"]
+        .mean()
+        .dropna()
+    )
+
+    if hourly.empty:
+        return None
+
+    averaging_hours = AQI_AVERAGING_HOURS[
+        parameter
+    ]
+
+    # Require a complete averaging window.
+    rolling = (
+        hourly
+        .rolling(
+            window=averaging_hours,
+            min_periods=averaging_hours,
+        )
+        .mean()
+        .dropna()
+    )
+
+    if rolling.empty:
+        return None
+
+    latest_timestamp = rolling.index[-1]
+
+    latest_average = float(
+        rolling.iloc[-1]
+    )
+
+    window_start = (
+        latest_timestamp
+        - pd.Timedelta(
+            hours=averaging_hours - 1
+        )
+    )
+
+    window = hourly.loc[
+        window_start:latest_timestamp
+    ]
+
+    observation_count = int(
+        window.notna().sum()
+    )
+
+    return {
+        "average": latest_average,
+        "timestamp": str(
+            latest_timestamp
+        ),
+        "observations": observation_count,
+        "averaging_hours": averaging_hours,
+    }
+
+def calculate_aqi_subindices(
+    df: pd.DataFrame,
+) -> list[dict[str, Any]]:
+    """
+    Calculate available pollutant AQI sub-indices.
+    """
+
+    results = []
+
+    for parameter in AQI_AVERAGING_HOURS:
+
+        latest = get_latest_aqi_average(
+            df,
+            parameter,
+        )
+
+        if latest is None:
+            continue
+
+        # CPCB AQI calculation requires at least
+        # 16 observations for a pollutant.
+        if latest["observations"] < 16:
+
+            results.append(
+                {
+                    "parameter": parameter,
+                    "label": PARAMETER_LABELS.get(
+                        parameter,
+                        parameter.upper(),
+                    ),
+                    "status": "insufficient_data",
+                    "reason": (
+                        "Fewer than 16 observations "
+                        "available."
+                    ),
+                    "observations": latest[
+                        "observations"
+                    ],
+                    "averaging_hours": latest[
+                        "averaging_hours"
+                    ],
+                }
+            )
+
+            continue
+
+        concentration = latest[
+            "average"
+        ]
+
+        subindex = calculate_aqi_subindex(
+            parameter,
+            concentration,
+        )
+
+        if subindex is None:
+            continue
+
+        results.append(
+            {
+                "parameter": parameter,
+                "label": PARAMETER_LABELS.get(
+                    parameter,
+                    parameter.upper(),
+                ),
+                "status": "valid",
+                "concentration": round(
+                    concentration,
+                    3,
+                ),
+                "unit": AQI_UNITS[
+                    parameter
+                ],
+                "sub_index": subindex,
+                "category": get_aqi_category(
+                    subindex
+                ),
+                "averaging_hours": latest[
+                    "averaging_hours"
+                ],
+                "observations": latest[
+                    "observations"
+                ],
+                "timestamp": latest[
+                    "timestamp"
+                ],
+            }
+        )
+
+    return results
+
+
+
+def calculate_overall_aqi(
+    subindices: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """
+    Calculate the overall city-level AQI.
+
+    The highest pollutant sub-index determines
+    the overall AQI.
+    """
+
+    valid = [
+        item
+        for item in subindices
+        if item.get("status") == "valid"
+    ]
+
+    parameters = {
+        item["parameter"]
+        for item in valid
+    }
+
+    has_required_particulate_pollutant = (
+        "pm25" in parameters
+        or "pm10" in parameters
+    )
+
+    if (
+        len(valid) < 3
+        or not has_required_particulate_pollutant
+    ):
+
+        return {
+            "status": "insufficient_data",
+            "aqi": None,
+            "category": None,
+            "dominant_pollutant": None,
+            "dominant_pollutant_label": None,
+            "reason": (
+                "Overall AQI requires at least "
+                "3 pollutants, including PM2.5 "
+                "or PM10."
+            ),
+        }
+
+    dominant = max(
+        valid,
+        key=lambda item: item["sub_index"],
+    )
+
+    aqi = int(
+        round(
+            dominant["sub_index"]
+        )
+    )
+
+    aqi = max(
+        0,
+        min(
+            500,
+            aqi,
+        ),
+    )
+
+    return {
+        "status": "valid",
+        "aqi": aqi,
+        "category": get_aqi_category(aqi),
+        "dominant_pollutant": dominant[
+            "parameter"
+        ],
+        "dominant_pollutant_label": dominant[
+            "label"
+        ],
+    }
+
+
+
+def calculate_city_aqi(
+    df: pd.DataFrame,
+) -> dict[str, Any]:
+    """
+    Calculate the complete Indian AQI analysis
+    for the selected city.
+    """
+
+    if df.empty:
+        return {
+            "status": "no_data",
+            "aqi": None,
+            "category": None,
+            "dominant_pollutant": None,
+            "dominant_pollutant_label": None,
+            "subindices": [],
+        }
+
+    subindices = calculate_aqi_subindices(
+        df
+    )
+
+    overall = calculate_overall_aqi(
+        subindices
+    )
+
+    return {
+        **overall,
+        "subindices": subindices,
+    }
+
+
 
 
 # ============================================================
@@ -773,11 +1238,20 @@ def get_city_analytics(
     df: pd.DataFrame,
     city_name: str,
 ) -> dict[str, Any]:
-    
 
     if df.empty:
         return {
             "city": city_name,
+
+            "aqi": {
+                "status": "no_data",
+                "aqi": None,
+                "category": None,
+                "dominant_pollutant": None,
+                "dominant_pollutant_label": None,
+                "subindices": [],
+            },
+
             "pollutant_statistics": [],
             "daily_trends": [],
             "hourly_patterns": [],
@@ -794,7 +1268,9 @@ def get_city_analytics(
     return {
         "city": city_name,
 
-
+        "aqi": calculate_city_aqi(
+            df
+        ),
 
         "pollutant_statistics":
             get_pollutant_statistics(
@@ -853,7 +1329,6 @@ def get_city_analytics(
                 "pm25",
             ),
     }
-
 
 # ============================================================
 # Main Test
