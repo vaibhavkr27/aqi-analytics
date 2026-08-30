@@ -1,25 +1,8 @@
-"""
-CityAir — production-style OpenAQ ingestion pipeline.
-
-The pipeline:
-
-    city coordinates
-        ↓
-    OpenAQ locations
-        ↓
-    sensors
-        ↓
-    hourly measurements
-        ↓
-    SQLite
-
-Usage:
-
-    python data/ingest.py
-
-The initial city list is stored in data/cities.py.
-"""
 from __future__ import annotations
+from dotenv import load_dotenv
+
+load_dotenv()
+
 
 import os
 import sqlite3
@@ -33,14 +16,21 @@ from pathlib import Path
 
 import requests
 
-from geocoder import geocode_city
 
-# Allow importing data.cities when running:
-# python data/ingest.py
+# ============================================================
+# Project path
+# ============================================================
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
+
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(
+        0,
+        str(PROJECT_ROOT),
+    )
 
 
+from data.geocoder import geocode_city
 
 
 # ============================================================
