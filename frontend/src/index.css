@@ -1,0 +1,38 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-overcast text-graphite font-body antialiased;
+  }
+
+  ::selection {
+    @apply bg-instrument/20;
+  }
+
+  :focus-visible {
+    @apply outline outline-2 outline-offset-2 outline-instrument;
+  }
+}
+
+@layer utilities {
+  .font-tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
