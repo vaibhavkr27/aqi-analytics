@@ -1,227 +1,106 @@
+<div align="center">
 
+# 🌫️ AeroIQ
+### An End-to-End Air Quality Analytics Project
 
-# CityAir 🌫️
+**From raw sensor data to statistical insight: a real-world data analysis pipeline covering data acquisition, cleaning, EDA, anomaly detection, and insight generation — served through an interactive dashboard.**
 
-Real-time air quality analytics for Indian cities using public air-quality data.
+![Python](https://img.shields.io/badge/Python-Data%20Analysis-3776AB?logo=python&logoColor=white)
+![Pandas](https://img.shields.io/badge/Pandas-EDA%20%26%20Analytics-150458?logo=pandas&logoColor=white)
+![SQL](https://img.shields.io/badge/SQL-SQLite-003B57?logo=sqlite&logoColor=white)
+![Statistics](https://img.shields.io/badge/Statistics-Anomaly%20Detection-orange)
+![FastAPI](https://img.shields.io/badge/FastAPI-Serving%20Layer-009688?logo=fastapi&logoColor=white)
+![React](https://img.shields.io/badge/React-Dashboard-61DAFB?logo=react&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-green)
 
-CityAir lets users search for a city, find the nearest available OpenAQ monitoring station, retrieve air-quality measurements, and explore the data through an interactive dashboard.
+</div>
 
-## Features
+<br>
 
-- 🔎 Search for Indian cities
-- 📍 Find nearby OpenAQ monitoring stations
-- 🌫️ Track PM2.5, PM10, NO₂, O₃, SO₂ and CO
-- 📊 Interactive air-quality charts
-- 📈 Historical pollutant trends
-- 🗄️ SQLite database for storing measurements
-- 🔄 Automated data refresh with GitHub Actions
-- 🚀 Streamlit dashboard
+<p align="center">
+  <img src="docs/screenshots/landing.png" width="90%" alt="AeroIQ landing page" />
+</p>
 
-## How It Works
+<p align="center">
+  <img src="docs/screenshots/report.png" width="90%" alt="AeroIQ AQI report for Delhi" />
+</p>
 
-City Search  
-↓  
-Geocoding  
-↓  
-Latitude / Longitude  
-↓  
-Nearby OpenAQ Stations  
-↓  
-Nearest Available Station  
-↓  
-Air Quality Measurements  
-↓  
-SQLite Database  
-↓  
-Streamlit Dashboard
+<br>
 
-## Tech Stack
+## 📌 The Question This Project Answers
 
-* Python
-* OpenAQ API
-* Geocoding API
-* Pandas
-* SQLite
-* SQL
-* Plotly
-* Streamlit
-* GitHub Actions
+*Given raw, messy, real-world air-quality sensor data for any Indian city — can I turn it into a trustworthy AQI score, spot the patterns and anomalies that matter, and explain them in plain language?*
 
-## Project Structure
+AeroIQ is my answer: a full analytics pipeline, not just a dashboard. Type a city, and it geocodes it, pulls live monitoring-station data, cleans and processes it, applies the official CPCB AQI methodology, runs statistical analysis on top, and generates written insights — for **any** city, not a fixed pre-loaded list.
 
-```text
-aqi-analytics/
-│
-├── app/
-│   └── app.py              # Streamlit dashboard
-│
-├── data/
-│   ├── ingest.py           # Data ingestion pipeline
-│   └── geocoder.py         # City geocoding
-│
-├── db/
-│   ├── schema.sql          # Database schema
-│   └── aqi.db              # SQLite database
-│
-├── analysis/
-│   └── queries.sql         # SQL analysis queries
-│
-├── .github/
-│   └── workflows/
-│       └── refresh-data.yml
-│
-├── .streamlit/
-│   └── config.toml
-│
-├── requirements.txt
-└── README.md
+## 🔍 The Analysis Workflow
+
+```
+Raw API data  →  Data Cleaning  →  Feature Engineering  →  EDA
+→  AQI Calculation (CPCB methodology)  →  Statistical Analysis
+→  Anomaly Detection  →  Insight Generation  →  Dashboard
 ```
 
-## Setup
+**Proof it works on unseen data:** run it on **Jaipur** — a city with zero pre-loaded records — and the pipeline still geocodes it, finds the nearest real monitoring station (1.94 km away), pulls 3,547 readings, and produces a full report on the fly.
 
-### 1. Clone the repository
+## 🧮 Core Analytical Work
+
+This is where most of the actual effort went:
+
+- **Data cleaning & preprocessing** — timestamp normalization (UTC → IST), unit standardization, missing-value and duplicate handling across 6 pollutants (PM2.5, PM10, NO₂, SO₂, O₃, CO)
+- **Feature engineering** — derived fields (`hour`, `day_of_week`, `is_statistical_anomaly`, `robust_z_score`) built for downstream analysis
+- **Exploratory data analysis** — descriptive statistics per pollutant (mean, median, std dev, P95/P99), daily and hourly trend analysis, weekday-vs-weekend comparisons, and a pollutant correlation matrix
+- **AQI calculation** — CPCB-methodology sub-index computation via breakpoint interpolation, with minimum-observation thresholds before a score is produced
+- **Anomaly detection** — robust z-score-based outlier detection against local baselines to surface real pollution spikes, not noise
+- **Insight generation** — analytical output translated into plain-language findings, e.g. *"PM2.5 spiked 1612% above its local baseline at 5 PM"* — the kind of storytelling that turns numbers into a decision-ready narrative
+- **SQL-backed data layer** — SQLite used as a queryable local warehouse (cities, stations, sensors, readings), with case-insensitive lookups and de-duplicated inserts
+
+## 📊 Findings From Real Data
+
+| City | Observations Analyzed | AQI | Category | Dominant Pollutant |
+|---|---|---|---|---|
+| Delhi | 3,550 | 132 | Moderate | PM2.5 |
+| Mumbai | 2,224 | 122 | Moderate | NO₂ |
+| Jaipur | 3,547 | Resolved live, zero prior data | — | — |
+
+## 🛠️ Tools & Techniques
+
+| Category | Tools |
+|---|---|
+| Data wrangling & EDA | **Pandas**, Python |
+| Data storage & querying | **SQL** (SQLite) |
+| Statistical methods | Breakpoint interpolation, robust z-score anomaly detection, correlation analysis |
+| Data sourcing | OpenAQ API, OpenStreetMap Nominatim (geocoding) |
+| Serving & visualization | FastAPI, React, Recharts |
+
+## 🚀 Quick Start
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/aqi-analytics.git
-cd aqi-analytics
-```
-
-### 2. Create a virtual environment
-
-Windows:
-
-```powershell
-python -m venv venv
-venv\Scripts\activate
-```
-
-macOS / Linux:
-
-```bash
-python3 -m venv venv
-source venv/bin/activate
-```
-
-### 3. Install dependencies
-
-```bash
+# analysis / API layer
 pip install -r requirements.txt
+cp .env.example .env      # add OPENAQ_API_KEY
+uvicorn api.main:app --reload
+
+# dashboard
+cd frontend && npm install && npm run dev
 ```
-
-### 4. Configure OpenAQ API Key
-
-Windows PowerShell:
-
-```powershell
-$env:OPENAQ_API_KEY="your_api_key"
-```
-
-macOS / Linux:
 
 ```bash
-export OPENAQ_API_KEY="your_api_key"
+curl "http://127.0.0.1:8000/api/report?city=Jaipur"
 ```
 
-### 5. Run the dashboard
+## ⚠️ Honest Notes on Methodology
 
-```bash
-streamlit run app/app.py
-```
+AQI follows CPCB *methodology*, not an official CPCB live feed · city coverage depends on nearby OpenAQ station availability · reports reflect the latest cached observations, not real-time conditions · no external weather/traffic variables or ML models are used — the analysis is fully statistical and transparent.
 
-## Data Ingestion
+## 🔭 Next Steps
 
-The ingestion pipeline can fetch air-quality data for a city:
+Extend correlation analysis with weather variables · add Power BI/Tableau export for stakeholder reporting · scheduled data refresh · broader city coverage.
 
-```bash
-python data/ingest.py Delhi
-```
+---
 
-Example:
+<div align="center">
 
-```bash
-python data/ingest.py Mumbai
-```
+MIT Licensed · Data analytics portfolio project
 
-The pipeline:
-
-1. Resolves the city using geocoding
-2. Finds nearby OpenAQ monitoring stations
-3. Selects a suitable station
-4. Retrieves available sensors and measurements
-5. Validates the data
-6. Stores the results in SQLite
-
-## Database
-
-CityAir uses SQLite with the following structure:
-
-```text
-City
-  │
-  └── Monitoring Location
-          │
-          └── Sensor
-                │
-                └── Reading
-```
-
-This allows the project to keep city, monitoring-station, sensor, and measurement data organized and enables SQL-based analysis.
-
-## Data Source
-
-Air-quality measurements are provided by the OpenAQ API.
-
-City locations are resolved using a geocoding service before searching for nearby monitoring stations.
-
-## Automated Data Refresh
-
-GitHub Actions is used to periodically refresh the stored air-quality data.
-
-The OpenAQ API key is stored securely as a GitHub Actions secret:
-
-```text
-OPENAQ_API_KEY
-```
-
-API keys are never stored directly in the repository.
-
-## Deployment
-
-The dashboard can be deployed using Streamlit Community Cloud.
-
-```text
-GitHub
-   ↓
-Streamlit Community Cloud
-   ↓
-CityAir Dashboard
-```
-
-## Project Goal
-
-CityAir demonstrates a complete real-world data workflow:
-
-```text
-External APIs
-     ↓
-Data Ingestion
-     ↓
-Data Validation
-     ↓
-Database
-     ↓
-SQL Analytics
-     ↓
-Visualization
-     ↓
-Web Dashboard
-     ↓
-Automated Updates
-```
-
-The project uses live public data rather than relying on a static dataset.
-
-## License
-
-This project is built for educational and portfolio purposes.
-
+</div>
