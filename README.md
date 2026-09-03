@@ -77,7 +77,7 @@ curl "http://127.0.0.1:8000/api/report?city=Jaipur"
 
 ## ⚠️ Honest Notes on Methodology
 
-AQI follows CPCB *methodology*, not an official CPCB live feed · city coverage depends on nearby OpenAQ station availability · reports reflect the latest cached observations, not real-time conditions · no external weather/traffic variables or ML models are used — the analysis is fully statistical and transparent.
+AQI follows CPCB *methodology*, not an official CPCB live feed· city coverage depends on nearby OpenAQ station availability · reports reflect the latest cached observations, not real-time conditions · no external weather/traffic variables or ML models are used — the analysis is fully statistical and transparent.
 
 ## 🔭 Next Steps
 
