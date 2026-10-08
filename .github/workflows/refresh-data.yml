@@ -33,7 +33,7 @@ jobs:
         env:
           OPENAQ_API_KEY: ${{ secrets.OPENAQ_API_KEY }}
         run: |
-          python data/ingest.py
+          python data/ingest.py Delhi
 
       - name: Commit database changes
         run: |
